@@ -1,10 +1,9 @@
 package internal
 
 import (
-	"fmt"
+	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -12,51 +11,48 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RequestBody struct {
-	Action string `json:"Action"`
+// AWSErrorResponse represents the standard AWS error response format for SESv2
+type AWSErrorResponse struct {
+	Type    string `json:"__type"`
+	Code    string `json:"Code"`
+	Message string `json:"Message"`
 }
 
 func handler(c *gin.Context) {
-	var reqBody RequestBody
-
-	// Read the request body as a string
+	// Read the request body
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, AWSErrorResponse{
+			Type:    "InternalServiceException",
+			Code:    "InternalServiceException",
+			Message: "Failed to read request body",
+		})
 		return
 	}
-
-	bodyString := string(bodyBytes)
-
-	values, _ := url.ParseQuery(bodyString)
-	reqBody = RequestBody{Action: values.Get("Action")}
-
-	fmt.Println(reqBody) // prints the decoded request
 
 	// Build dateDir
 	dateTime := time.Now().Format("2006-01-02-15-04-05.000Z")
 	dateDir := Config.OutputDir + "/" + dateTime[:10]
 	logDir := dateDir + "/" + dateTime[11:22] + "-log"
 
-	// Actions
-	switch reqBody.Action {
-	case "SendEmail":
-		mailErr := SendEmail(bodyString, c, dateDir, logDir)
+	var request SendEmailRequest
+	err = json.Unmarshal(bodyBytes, &request)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, AWSErrorResponse{
+			Type:    "InvalidParameterValue",
+			Code:    "InvalidParameterValue",
+			Message: "Failed to parse JSON request: " + err.Error(),
+		})
+		return
+	}
 
-		if mailErr != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"error": mailErr.Error(),
-			})
-			return
-		}
-
-		break
-	case "SendRawEmail":
-		SendRawEmail(c, dateDir, logDir)
-
-		break
-	default:
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "unsupported action"})
+	mailErr := SendEmail(request, c, dateDir, logDir)
+	if mailErr != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, AWSErrorResponse{
+			Type:    "InvalidParameterValue",
+			Code:    "InvalidParameterValue",
+			Message: mailErr.Error(),
+		})
 		return
 	}
 }
@@ -68,7 +64,7 @@ func StartServer() {
 
 	// Endpoints
 	r := gin.Default()
-	r.POST("/", handler)
+	r.POST("/v2/email/outbound-emails", handler) // SESv2 SendEmail endpoint
 
 	// Run
 	err := r.Run(":" + strconv.Itoa(Config.Port))
