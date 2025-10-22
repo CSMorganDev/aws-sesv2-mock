@@ -67,20 +67,22 @@ The `POST` endpoint is available under `http://localhost:8080/` and should conta
             "bcc@example.com"
         ]
     },
-    "Message": {
-        "Body": {
-            "Text": {
-                "Data": "This is the message body in plain text format."
+    "Content": {
+        "Simple": {
+            "Body": {
+                "Text": {
+                    "Data": "This is the message body in plain text format."
+                },
+                "Html": {
+                    "Data": "<html><body><h1>Hello World!</h1><p>This is the message body in HTML format.</p></body></html>"
+                }
             },
-            "Html": {
-                "Data": "<html><body><h1>Hello World!</h1><p>This is the message body in HTML format.</p></body></html>"
+            "Subject": {
+                "Data": "Test email"
             }
         },
-        "Subject": {
-            "Data": "Test email"
-        }
-    },
-    "Source": "sender@example.com",
+    }
+    "FromEmailAddress": "sender@example.com",
     "ReplyToAddresses": [
         "reply-to@example.com"
     ]
