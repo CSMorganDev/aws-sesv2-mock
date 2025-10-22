@@ -19,7 +19,7 @@ RUN mkdir -p /build/bin && \
     mv ./main /build/bin/main && \
     mv ./assets /build/assets
 
-FROM alpine:2.6
+FROM alpine:3.19
 
 # Set our workdir to /bin since the binary expects the assets to be located under ../assets
 WORKDIR /app/bin
