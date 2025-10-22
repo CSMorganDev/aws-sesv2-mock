@@ -3,14 +3,15 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 type Destination struct {
@@ -29,21 +30,26 @@ type Body struct {
 	Html Content `json:"Html"`
 }
 
-type Subject struct {
+type ContentSubject struct {
 	Data string `json:"Data"`
+}
+
+type EmailContent struct {
+	Simple Message `json:"Simple"`
 }
 
 type Message struct {
 	Body    Body    `json:"Body"`
-	Subject Subject `json:"Subject"`
+	Subject Content `json:"Subject"`
 }
 
 type SendEmailRequest struct {
-	Action           string      `json:"Action"`
-	Destination      Destination `json:"Destination"`
-	Message          Message     `json:"Message"`
-	Source           string      `json:"Source"`
-	ReplyToAddresses []string    `json:"ReplyToAddresses"`
+	Action                      string       `json:"Action"`
+	Destination                 Destination  `json:"Destination"`
+	Content                     EmailContent `json:"EmailContent"`
+	FromEmailAddress            string       `json:"FromEmailAddress"`
+	FromEmailAddressIdentityArn string       `json:"FromEmailAddressIdentityArn"`
+	ReplyToAddresses            []string     `json:"ReplyToAddresses"`
 }
 
 func deserializeSendEmailRequest(reqBody string) (*SendEmailRequest, error) {
@@ -60,17 +66,20 @@ func deserializeSendEmailRequest(reqBody string) (*SendEmailRequest, error) {
 		Destination: Destination{
 			ToAddresses: toAddresses,
 		},
-		Message: Message{
-			Body: Body{
-				Html: Content{
-					Data: queryValues.Get("Message.Body.Html.Data"),
+		Content: EmailContent{
+			Simple: Message{
+				Body: Body{
+					Html: Content{
+						Data: queryValues.Get("Content.Simple.Body.Html.Data"),
+					},
+				},
+				Subject: Content{
+					Data: queryValues.Get("Content.Simple.Subject.Data"),
 				},
 			},
-			Subject: Subject{
-				Data: queryValues.Get("Message.Subject.Data"),
-			},
 		},
-		Source: queryValues.Get("Source"),
+		FromEmailAddress:            queryValues.Get("FromEmailAddress"),
+		FromEmailAddressIdentityArn: queryValues.Get("FromEmailAddressIdentityArn"),
 	}
 
 	for _, address := range toAddresses {
@@ -123,9 +132,9 @@ func SendEmail(bodyString string, c *gin.Context, dataDir string, logDir string)
 	}
 
 	// Validation
-	if !(request.Source != "" &&
-		request.Message.Subject.Data != "" &&
-		(request.Message.Body.Html.Data != "" || request.Message.Body.Text.Data != "") &&
+	if !(request.FromEmailAddress != "" &&
+		request.Content.Simple.Subject.Data != "" &&
+		(request.Content.Simple.Body.Html.Data != "" || request.Content.Simple.Body.Text.Data != "") &&
 		len(request.Destination.ToAddresses) > 0) {
 
 		LogValidationErrors(request)
@@ -145,25 +154,25 @@ func SendEmail(bodyString string, c *gin.Context, dataDir string, logDir string)
 	}
 
 	// Write html data to dataDir/body.html
-	err = writeFileContent(filepath.Join(logDir, "body.html"), []byte(request.Message.Body.Html.Data))
+	err = writeFileContent(filepath.Join(logDir, "body.html"), []byte(request.Content.Simple.Body.Html.Data))
 	if err != nil {
 		return err
 	}
 
 	// Write body to dataDir/body.txt
-	err = writeFileContent(filepath.Join(logDir, "body.txt"), []byte(request.Message.Body.Text.Data))
+	err = writeFileContent(filepath.Join(logDir, "body.txt"), []byte(request.Content.Simple.Body.Text.Data))
 	if err != nil {
 		return err
 	}
 
 	// Write headers to dataDir/headers.txt
 	headers := fmt.Sprintf("Subject: %s\nTo: %s\nCc: %s\nBcc: %s\nReply-To: %s\nFrom: %s\n",
-		request.Message.Subject.Data,
+		request.Content.Simple.Subject.Data,
 		strings.Join(request.Destination.ToAddresses, ","),
 		strings.Join(request.Destination.CcAddresses, ","),
 		strings.Join(request.Destination.BccAddresses, ","),
 		strings.Join(request.ReplyToAddresses, ","),
-		request.Source,
+		request.FromEmailAddress,
 	)
 	err = writeFileContent(filepath.Join(logDir, "headers.txt"), []byte(headers))
 	if err != nil {
@@ -192,17 +201,17 @@ func LogValidationErrors(request *SendEmailRequest) {
 		logrus.Info("ToAddresses is not provided")
 	}
 
-	if request.Source == "" {
-		logrus.Error("Source was not provided")
+	if request.FromEmailAddress == "" {
+		logrus.Error("FromEmailAddress was not provided")
 	}
 
 	// Check if Subject is provided
-	if request.Message.Subject.Data == "" {
+	if request.Content.Simple.Subject.Data == "" {
 		logrus.Error("Subject.Data was not provided")
 	}
 
 	// Check if Body.Html.Data or Body.Text.Data is provided
-	if request.Message.Body.Html.Data == "" && request.Message.Body.Text.Data == "" {
+	if request.Content.Simple.Body.Html.Data == "" && request.Content.Simple.Body.Text.Data == "" {
 		logrus.Error("Body.Html.Data or Body.Text.Data was not provided")
 	}
 }
